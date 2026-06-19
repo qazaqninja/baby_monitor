@@ -19,13 +19,20 @@ const Map<String, dynamic> kRtcConfig = {
 typedef AnswerBuilder = Future<RTCSessionDescription> Function(
     RTCSessionDescription offer);
 
+/// Runs a remote-control [action] (e.g. 'switchCamera', 'torch') on the camera
+/// and returns its current state ({facingFront, torchOn, hasTorch}). A null
+/// action just queries state. Camera side supplies this.
+typedef ControlHandler = Future<Map<String, dynamic>> Function(
+    String? action, bool? value);
+
 /// Camera-side embedded signaling: a tiny `dart:io` HTTP server. The viewer
 /// POSTs an SDP offer to `/offer`; we hand it to [onOffer] and return its SDP
 /// answer. One request, one response — non-trickle, stateless, `curl`-able.
 class CameraSignalingServer {
-  CameraSignalingServer(this.onOffer);
+  CameraSignalingServer(this.onOffer, {this.onControl});
 
   final AnswerBuilder onOffer;
+  final ControlHandler? onControl;
   HttpServer? _server;
 
   Future<void> start({int port = kSignalPort}) async {
@@ -46,6 +53,25 @@ class CameraSignalingServer {
           ..statusCode = HttpStatus.ok
           ..headers.contentType = ContentType.json
           ..write(jsonEncode({'sdp': answer.sdp, 'type': answer.type}));
+      } else if (req.method == 'POST' &&
+          req.uri.path == '/control' &&
+          onControl != null) {
+        final body = await utf8.decoder.bind(req).join();
+        final json = jsonDecode(body) as Map<String, dynamic>;
+        final state =
+            await onControl!(json['action'] as String?, json['value'] as bool?);
+        res
+          ..statusCode = HttpStatus.ok
+          ..headers.contentType = ContentType.json
+          ..write(jsonEncode(state));
+      } else if (req.method == 'GET' &&
+          req.uri.path == '/state' &&
+          onControl != null) {
+        final state = await onControl!(null, null);
+        res
+          ..statusCode = HttpStatus.ok
+          ..headers.contentType = ContentType.json
+          ..write(jsonEncode(state));
       } else if (req.method == 'GET' && req.uri.path == '/health') {
         res
           ..statusCode = HttpStatus.ok
@@ -87,6 +113,38 @@ Future<RTCSessionDescription> postOffer(
     }
     final json = jsonDecode(body) as Map<String, dynamic>;
     return RTCSessionDescription(json['sdp'] as String, json['type'] as String);
+  } finally {
+    client.close(force: true);
+  }
+}
+
+/// Viewer-side: send a remote-control [action] to the camera (POST /control)
+/// and return its reported state, or just query state (GET /state) when
+/// [action] is null. Short timeout so it never hangs the UI.
+Future<Map<String, dynamic>> sendControl(
+  String host,
+  int port,
+  String? action, {
+  bool? value,
+}) async {
+  final client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
+  try {
+    final HttpClientRequest req;
+    if (action == null) {
+      req = await client
+          .getUrl(Uri(scheme: 'http', host: host, port: port, path: '/state'));
+    } else {
+      req = await client.postUrl(
+          Uri(scheme: 'http', host: host, port: port, path: '/control'));
+      req.headers.contentType = ContentType.json;
+      req.write(jsonEncode({'action': action, 'value': value}));
+    }
+    final resp = await req.close();
+    final body = await utf8.decoder.bind(resp).join();
+    if (resp.statusCode != HttpStatus.ok) {
+      throw HttpException('camera returned ${resp.statusCode}: $body');
+    }
+    return jsonDecode(body) as Map<String, dynamic>;
   } finally {
     client.close(force: true);
   }

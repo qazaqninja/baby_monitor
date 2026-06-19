@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'camera_page.dart';
+import 'theme.dart';
 import 'viewer_page.dart';
 
 void main() {
@@ -17,7 +18,7 @@ class BabyMonitorApp extends StatelessWidget {
     return MaterialApp(
       title: 'Baby Monitor',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark(useMaterial3: true),
+      theme: babyTheme,
       home: const RolePicker(),
     );
   }
@@ -53,35 +54,70 @@ class _RolePickerState extends State<RolePicker> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.crib, size: 64),
-              const SizedBox(height: 8),
-              Text('Baby Monitor',
-                  style: Theme.of(context).textTheme.headlineSmall),
-              const SizedBox(height: 32),
-              _RoleButton(
-                icon: Icons.videocam,
-                title: 'Camera',
-                subtitle:
-                    'This phone watches the baby (use an Android phone, plugged in)',
-                highlight: _lastRole == 'camera',
-                onTap: () => _open('camera'),
+      body: Container(
+        decoration: const BoxDecoration(gradient: warmBackdrop),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(22),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: warmSeed.withValues(alpha: 0.25),
+                          blurRadius: 24,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Icon(Icons.child_care, size: 56, color: scheme.primary),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Baby Monitor',
+                    style: TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.w700,
+                      color: warmBrown,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Keep a gentle eye on your little one',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: warmBrown.withValues(alpha: 0.7),
+                    ),
+                  ),
+                  const SizedBox(height: 36),
+                  _RoleButton(
+                    icon: Icons.videocam_rounded,
+                    title: 'Use as Camera',
+                    subtitle:
+                        'This phone watches the baby (use an Android phone, plugged in)',
+                    highlight: _lastRole == 'camera',
+                    onTap: () => _open('camera'),
+                  ),
+                  const SizedBox(height: 14),
+                  _RoleButton(
+                    icon: Icons.phone_iphone_rounded,
+                    title: 'Use as Viewer',
+                    subtitle: 'Watch the stream from here',
+                    highlight: _lastRole == 'viewer',
+                    onTap: () => _open('viewer'),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              _RoleButton(
-                icon: Icons.phone_iphone,
-                title: 'Viewer',
-                subtitle: 'Watch the stream from here',
-                highlight: _lastRole == 'viewer',
-                onTap: () => _open('viewer'),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -106,16 +142,56 @@ class _RoleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Card(
-      color: highlight ? Theme.of(context).colorScheme.primaryContainer : null,
-      child: ListTile(
-        leading: Icon(icon, size: 32),
-        title: Text(title),
-        subtitle: Text(subtitle),
-        trailing: highlight
-            ? const Icon(Icons.history)
-            : const Icon(Icons.chevron_right),
+      color: highlight ? scheme.primaryContainer : Colors.white,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
         onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(icon, size: 28, color: scheme.primary),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: warmBrown,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.3,
+                        color: warmBrown.withValues(alpha: 0.65),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                highlight ? Icons.history_rounded : Icons.chevron_right_rounded,
+                color: scheme.primary,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

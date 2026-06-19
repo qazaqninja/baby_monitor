@@ -40,4 +40,31 @@ void main() {
 
     await server.stop();
   });
+
+  test('remote control POST /control and GET /state round-trip', () async {
+    String? seenAction;
+    bool? seenValue;
+    final server = CameraSignalingServer(
+      (offer) async => RTCSessionDescription('', 'answer'),
+      onControl: (action, value) async {
+        seenAction = action;
+        seenValue = value;
+        return {'facingFront': false, 'torchOn': value ?? false, 'hasTorch': true};
+      },
+    );
+    await server.start(port: 18082);
+
+    final afterTorch =
+        await sendControl('127.0.0.1', 18082, 'torch', value: true);
+    expect(seenAction, 'torch');
+    expect(seenValue, true);
+    expect(afterTorch['torchOn'], true);
+    expect(afterTorch['hasTorch'], true);
+
+    final state = await sendControl('127.0.0.1', 18082, null); // GET /state
+    expect(seenAction, isNull); // null action == pure query
+    expect(state['hasTorch'], true);
+
+    await server.stop();
+  });
 }
