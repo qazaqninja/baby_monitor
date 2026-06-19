@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:bonsoir/bonsoir.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -23,6 +24,7 @@ class _CameraPageState extends State<CameraPage> {
   final List<RTCPeerConnection> _peers = [];
   MediaStream? _stream;
   CameraSignalingServer? _server;
+  BonsoirBroadcast? _broadcast;
   List<String> _addresses = [];
   String _status = 'Starting…';
   bool _standby = false; // black screen to avoid OLED burn-in
@@ -54,7 +56,12 @@ class _CameraPageState extends State<CameraPage> {
 
       _server = CameraSignalingServer(_answerOffer);
       await _server!.start();
+
+      await _triggerLocalNetwork();
+      await _startBonjour();
+
       _addresses = await localAddresses();
+      debugPrint('[CAM] server up on $_addresses :$kSignalPort');
       setState(() => _status = 'Live — waiting for viewers');
     } catch (e) {
       setState(() => _status = 'Camera/server error: $e');
@@ -89,12 +96,48 @@ class _CameraPageState extends State<CameraPage> {
     );
   }
 
+  // Two independent ways to surface the iOS "Local Network" permission prompt
+  // (libwebrtc needs it granted to send media to the viewer's LAN address):
+  // a Bonjour advertisement, and a direct outbound UDP broadcast. Whichever
+  // fires the prompt first wins; both are logged so we can see what happened.
+  Future<void> _startBonjour() async {
+    try {
+      _broadcast = BonsoirBroadcast(
+        service: BonsoirService(
+          name: 'Baby Monitor',
+          type: '_babymonitor._tcp',
+          port: kSignalPort,
+        ),
+      );
+      await _broadcast!.initialize();
+      await _broadcast!.start();
+      debugPrint('[CAM] bonjour broadcast started');
+    } catch (e) {
+      debugPrint('[CAM] bonjour error: $e');
+    }
+  }
+
+  Future<void> _triggerLocalNetwork() async {
+    try {
+      final s = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      s.broadcastEnabled = true;
+      s.send(const [0], InternetAddress('255.255.255.255'), 9999);
+      s.close();
+      debugPrint('[CAM] local-network UDP trigger sent');
+    } catch (e) {
+      debugPrint('[CAM] local-network trigger error: $e');
+    }
+  }
+
   // Camera side of the WebRTC handshake: the viewer offered recv-only A/V, so
   // adding our tracks makes this connection send-only automatically.
   Future<RTCSessionDescription> _answerOffer(RTCSessionDescription offer) async {
+    debugPrint('[CAM] offer received from a viewer');
     final pc = await createPeerConnection(kRtcConfig);
     _peers.add(pc);
+    pc.onIceConnectionState = (s) => debugPrint('[CAM] ICE: $s');
     pc.onConnectionState = (s) {
+      debugPrint('[CAM] conn: $s');
       if (s == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
           s == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
           s == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
@@ -129,6 +172,7 @@ class _CameraPageState extends State<CameraPage> {
     for (final pc in _peers) {
       pc.close();
     }
+    _broadcast?.stop();
     _server?.stop();
     _stream?.getTracks().forEach((t) => t.stop());
     _stream?.dispose();

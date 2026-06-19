@@ -92,16 +92,53 @@ Future<RTCSessionDescription> postOffer(
   }
 }
 
-/// Non-loopback IPv4 addresses this device is reachable at — LAN (192.168.x /
-/// 10.x) and, if the tun interface is visible, the Tailscale 100.x. Shown on the
-/// camera for pairing so the parent knows what to type into the viewer.
+/// The WiFi LAN address(es) this device is reachable at, best first. The camera
+/// shows this for pairing, so it must NOT surface cellular (carrier 10.x),
+/// 464XLAT (192.0.0.x), or link-local (169.254.x) noise — those confuse the
+/// parent into typing an address the viewer can't reach. Strategy: prefer the
+/// WiFi interface (en0/wlan0) and the 192.168.x range; only fall back to other
+/// private ranges if nothing better exists.
 Future<List<String>> localAddresses() async {
-  final out = <String>[];
+  final seen = <String>{};
+  final entries = <(String, String)>[]; // (interfaceName, ip)
   for (final iface
       in await NetworkInterface.list(type: InternetAddressType.IPv4)) {
     for (final addr in iface.addresses) {
-      if (!addr.isLoopback) out.add(addr.address);
+      final ip = addr.address;
+      if (addr.isLoopback ||
+          ip.startsWith('169.254.') || // link-local
+          ip.startsWith('192.0.0.')) {
+        continue; // 464XLAT/cellular clat
+      }
+      if (seen.add(ip)) entries.add((iface.name, ip));
     }
   }
-  return out;
+
+  bool isWifi(String name) {
+    final n = name.toLowerCase();
+    return n.startsWith('en') || n.contains('wlan') || n.contains('wifi');
+  }
+
+  int rank((String, String) e) {
+    final (name, ip) = e;
+    final wifi = isWifi(name);
+    if (ip.startsWith('192.168.')) return wifi ? 0 : 1; // home WiFi LAN
+    if (wifi) return 2;
+    if (_isPrivateLan(ip)) return 3; // other private (could be cellular 10.x)
+    return 4;
+  }
+
+  entries.sort((a, b) => rank(a).compareTo(rank(b)));
+  // If we found a genuine WiFi/192.168 address, show only those — hide the rest.
+  final best = entries.where((e) => rank(e) <= 1).map((e) => e.$2).toList();
+  return best.isNotEmpty ? best : entries.map((e) => e.$2).toList();
+}
+
+bool _isPrivateLan(String ip) {
+  if (ip.startsWith('192.168.') || ip.startsWith('10.')) return true;
+  if (ip.startsWith('172.')) {
+    final second = int.tryParse(ip.split('.')[1]) ?? 0;
+    return second >= 16 && second <= 31;
+  }
+  return false;
 }

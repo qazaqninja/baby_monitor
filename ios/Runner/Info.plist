@@ -8,6 +8,10 @@
 	<string>Baby Monitor uses the microphone to stream live audio of your baby.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Baby Monitor connects the camera and viewer phones over your local network.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_babymonitor._tcp</string>
+	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
